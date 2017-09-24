@@ -1,0 +1,33 @@
+baseurl = "https://iyp-uk.github.io/"
+theme = "cocoa-eh"
+builddrafts = false
+canonifyurls = true
+contentdir = "content"
+languageCode = "en-GB"
+layoutdir = "layouts"
+publishdir = "public"
+author = "Jerome Krieg"
+title = "IYP UK"
+pluralizelisttitles = false
+
+[permalinks]
+blog = "blog/:slug/"
+
+[params]
+disqusshortname = "jeromekrieg"
+dateform = "Jan 2, 2006"
+dateformfull = "Mon Jan 2 2006 15:04:05 MST"
+description = "IYP UK information"
+copyright = "Copyright © 2017 IYP UK"
+logofile = "img/logo.png"
+faviconfile = "img/favicon.png"
+highlightjs = true
+progressively = false
+lang = "en"
+github = "iyp-uk"
+email = ""
+linkedin = ""
+twitter = ""
+social_banner = "img/logo.png"
+posts_navigation = true
+latestpostcount = 5
