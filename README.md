@@ -14,4 +14,10 @@ $ hugo server
 $ hugo
 ```
 
+## Deploy content to github pages
+
+```console
+$ ./deploy.sh
+```
+
 Couldn't be simpler!
