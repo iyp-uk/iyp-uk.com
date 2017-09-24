@@ -14,7 +14,7 @@ pluralizelisttitles = false
 blog = "blog/:slug/"
 
 [params]
-disqusshortname = "jeromekrieg"
+disqusshortname = ""
 dateform = "Jan 2, 2006"
 dateformfull = "Mon Jan 2 2006 15:04:05 MST"
 description = "IYP UK information"
