@@ -1,7 +1,6 @@
 ---
 title: "Getting Started With Bluetooth Low Energy"
 date: 2017-08-26T18:14:18+01:00
-draft: true
 tags: [ "IoT", "bluetooth", "BLE" ]
 ---
 

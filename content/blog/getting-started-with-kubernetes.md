@@ -1,7 +1,6 @@
 ---
 title: "Getting Started With Kubernetes"
 date: 2017-08-24T11:07:05+01:00
-draft: true
 tags: [ "kubernetes", "coreOS", "local", "minikube" ]
 ---
 

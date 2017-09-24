@@ -1,7 +1,6 @@
 ---
 title: "Getting Started With Terraform"
 date: 2017-08-24T16:23:41+01:00
-draft: true
 tags: [ "terraform" ]
 ---
 

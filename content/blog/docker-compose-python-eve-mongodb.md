@@ -1,11 +1,8 @@
 ---
 title: "Docker Compose Python Eve Mongodb"
 date: 2017-08-18T14:47:35+01:00
-draft: true
 tags: [ "docker", "python", "eve", "MongoDB", "REST", "PyCharm" ]
 ---
-
-> This article is inspired by [a blog post from JetBrains](https://blog.jetbrains.com/pycharm/2017/03/docker-compose-getting-flask-up-and-running/).
 
 ## PyCharm
 
@@ -204,8 +201,10 @@ Add path mapping:
 You can now run your debugger which will automatically launch the docker compose command.
 {{< figure src="/img/Mapping.png"  >}}
 
-
-
 ## Source code
 
 Source code is available at https://github.com/iyp-uk/docker-compose-python-eve
+
+## Further reading
+
+> This article is inspired by [a blog post from JetBrains](https://blog.jetbrains.com/pycharm/2017/03/docker-compose-getting-flask-up-and-running/).
