@@ -1,4 +1,4 @@
-baseurl = "https://iyp-uk.github.io/"
+baseurl = "https://www.iyp-uk.com/"
 theme = "cocoa-eh"
 builddrafts = false
 canonifyurls = true
