@@ -9,6 +9,7 @@ publishdir = "public"
 author = "Jerome Krieg"
 title = "IYP UK"
 pluralizelisttitles = false
+googleAnalytics = "UA-107170827-1"
 
 [permalinks]
 blog = "blog/:slug/"
@@ -17,7 +18,7 @@ blog = "blog/:slug/"
 disqusshortname = ""
 dateform = "Jan 2, 2006"
 dateformfull = "Mon Jan 2 2006 15:04:05 MST"
-description = "IYP UK information"
+description = "IYP UK's website"
 copyright = "Copyright © 2017 IYP UK"
 logofile = "img/logo.png"
 faviconfile = "img/favicon.png"
