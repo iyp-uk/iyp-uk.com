@@ -1,6 +1,7 @@
 ---
 title: "TDD Django Docker"
 date: 2017-10-29T10:06:26Z
+tags: ["TDD", "Python", "Django", "docker"]
 ---
 
 ## What you will learn here
