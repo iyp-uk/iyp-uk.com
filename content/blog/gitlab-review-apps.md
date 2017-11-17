@@ -5,26 +5,28 @@ tags: [ "Continuous deployment", "Gitlab", "Review Apps", "docker" ]
 ---
 
 Let's have a look at [Gitlab's review Apps](https://about.gitlab.com/features/review-apps/), 
-available for available in GitLab.com, GitLab Community Edition, and GitLab Enterprise Edition.
+available for GitLab.com, GitLab Community Edition, and GitLab Enterprise Edition.
 
 ## So what's the plan?
 
-In this particular example, we want to demonstrate a use case of Gitlab's review apps.
-We will also demonstrate that in the context of a trivial docker-based python app, which essentially returns an "Hello world".
+In this particular example, we will showcase Gitlab's review apps in the context of a trivial docker-based python app.
+This app essentially returns an "Hello world".
 
 [Gitlab CI](https://docs.gitlab.com/ee/ci/README.html) allows us to do plenty of things, and in particular we will want to:
 
-1. Run tests (there are no tests in our dummy app but we'll bring a "stage" for it in case you want to fill them with your needs)
 1. Build the docker image
-1. Deploy the app to heroku
+1. Run tests
+1. Deploy the app to Heroku
 
-> The source code is available on [gitlab](https://gitlab.com/iyp-uk/gitlab-review-apps)
+> The source code is available on [gitlab](https://gitlab.com/iyp-uk/gitlab-review-apps).
+
+> Production app is [running here on Heroku](https://gitlab-review-apps-production.herokuapp.com/).
 
 ## Let's get started
 
-First of all, let's have a look at our app: [Here it is](https://gitlab.com/iyp-uk/gitlab-review-apps/tree/app-init).
+First of all, let's have a look at our basic app: [Here it is](https://gitlab.com/iyp-uk/gitlab-review-apps/tree/app-init).
 
-That's a Flask app, just [greeting you with a nice "Hello world!"](https://gitlab.com/iyp-uk/gitlab-review-apps/blob/app-init/app.py).
+That's a Flask app running in docker, just [greeting you with a nice "Hello world!"](https://gitlab.com/iyp-uk/gitlab-review-apps/blob/app-init/app.py).
 
 As you may see, there's no definition of any CI/CD pipeline. It's just the code.
 
@@ -48,6 +50,7 @@ The [job](https://docs.gitlab.com/ee/ci/yaml/README.html#jobs) has fired and you
 Codebase now looks like [this](https://gitlab.com/iyp-uk/gitlab-review-apps/tree/set-up-ci).
 
 > Read more:
+
 > * [Getting started with CI/CD in Gitlab](https://docs.gitlab.com/ee/ci/quick_start/README.html)
 > * [.gitlab-ci.yml reference](https://docs.gitlab.com/ee/ci/yaml/README.html)
 > * [Gitlab's CI docs](https://docs.gitlab.com/ee/ci/README.html)
@@ -86,7 +89,7 @@ $ docker build -t registry.gitlab.com/iyp-uk/gitlab-review-apps .
 $ docker push registry.gitlab.com/iyp-uk/gitlab-review-apps
 ``` 
 
-This tags your image with `latest` and pushes it to the registry where you [can see it](https://gitlab.com/iyp-uk/gitlab-review-apps/container_registry)
+This tags your image with `latest` and pushes it to the registry where you [can see it](https://gitlab.com/iyp-uk/gitlab-review-apps/container_registry).
 
 Let's now [add these steps to our build stage](https://gitlab.com/help/ci/docker/using_docker_build.md#using-the-gitlab-container-registry):
 
@@ -154,6 +157,8 @@ Commit and push:
 * [Check the registry](https://gitlab.com/iyp-uk/gitlab-review-apps/container_registry): Notice a new image tagged `master` has been created as we pushed from the `master` branch
 
 Codebase now looks like [this](https://gitlab.com/iyp-uk/gitlab-review-apps/tree/set-up-pipelines).
+
+> Read more:
 
 > * [Read more about these variables](https://docs.gitlab.com/ee/ci/variables/README.html)
 > * [Read .gitlab-ci.yml reference](https://docs.gitlab.com/ee/ci/yaml/README.html) for `services`, `variables` and `before_script` definitions
@@ -280,7 +285,7 @@ Codebase now looks like [this](https://gitlab.com/iyp-uk/gitlab-review-apps/tree
 
 Notice the `staging` environment is now available under [CI/CD > Environments](https://gitlab.com/iyp-uk/gitlab-review-apps/environments) where you have a direct link to it.
 
-> Read more about [Gitlab's environments](https://docs.gitlab.com/ee/ci/environments.html)
+> Read more about [Gitlab's environments](https://docs.gitlab.com/ee/ci/environments.html).
 
 ## Deploying Review Apps
 
@@ -339,7 +344,7 @@ With `curl` we can create an app on the fly without any dependency as the only t
 This triggers on any `branches` (so no `tags`), except `master`.
 The app is build and pushed to Heroku which suffice to get it live at https://gitlab-review-apps-$CI_PIPELINE_ID.herokuapp.com/
 
-And because we still have
+And because we still have:
 
 ```yaml
 deploy_staging:
