@@ -117,7 +117,7 @@ resource "aws_lambda_permission" "allow_bucket" {
 resource "aws_lambda_function" "func" {
   filename         = "${path.module}/../lambda/lambda.zip"
   count            = "${length(var.aws_s3_buckets)}"
-  function_name    = "drivers_stats_producer_${element(var.aws_s3_buckets, count.index)}"
+  function_name    = "lambda_func_name_${element(var.aws_s3_buckets, count.index)}"
   role             = "${aws_iam_role.iam_lambda_role.arn}"
   handler          = "lambda_function.lambda_handler"
   runtime          = "python2.7"
