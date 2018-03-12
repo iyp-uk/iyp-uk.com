@@ -1,6 +1,7 @@
 ---
 title: "Getting Started With Spark"
 date: 2018-02-19T14:50:28Z
+tags: [ "spark", "big data", "java", "scala" ]
 ---
 
 # Running Spark locally (single machine)
