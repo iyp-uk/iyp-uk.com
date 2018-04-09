@@ -2105,10 +2105,617 @@ with updated inclusions:
 from flask import current_app
 from app import db, bcrypt
 ```
+Now you can run the tests and change your code until they pass.
 
+Have you noticed how slow they now run? 
+[Hashing the password with bcrypt](https://en.wikipedia.org/wiki/Bcrypt) takes time...
+
+Let's have a closer look:
+`flask-bcrypt` sets the number of rounds to `12` by default: `self._log_rounds = app.config.get('BCRYPT_LOG_ROUNDS', 12)`
+
+Let's reduce that for our `Development` and `Testing` environments, and increase it to `13` elsewhere.
+
+In your `app/config.py`
+```python
+class BaseConfig:
+    """Base configuration"""
+    # Your existing config here.
+    BCRYPT_LOG_ROUNDS = 13
+    
+class DevelopmentConfig(BaseConfig):
+    """Development configuration"""
+    # Your existing config here.
+    BCRYPT_LOG_ROUNDS = 4
+    
+class TestingConfig(BaseConfig):
+    """Testing configuration"""
+    # Your existing config here.
+    BCRYPT_LOG_ROUNDS = 4
+```
+
+Measure the difference:
+
+Before:
+```console
+$ time docker exec -it users python manage.py test
+.... your tests passing
+docker exec -it users python manage.py test  0.02s user 0.01s system 0% cpu 11.632 total
+```
+After:
+```console
+$ time docker exec -it users python manage.py test
+.... your tests passing
+docker exec -it users python manage.py test  0.02s user 0.01s system 0% cpu 3.485 total
+```
+Almost 4 times faster!
+
+Here's where we are now:
+
+* `docker-flask-react`: no change
+* `docker-flask-react-users`: Add passwords to users. [repo](https://github.com/iyp-uk/docker-flask-react-users/tree/set-up-users-passwords) - [diff](https://github.com/iyp-uk/docker-flask-react-users/compare/sort-users-date-desc...set-up-users-passwords)
+* `docker-flask-react-client`: no change
+
+### Setting up JWT
+
+It's now time to set up our [JSON Web Tokens](https://jwt.io/introduction/), using [PyJWT](http://pyjwt.readthedocs.io/en/latest/index.html)
+
+We're now still in the `docker-flask-react-users` project.
+
+Add the package `pyjwt==1.5.3` to your `requirements.txt` and redeploy your container.
+
+Add a test to ensure we issue properly encoded tokens (`encode_auth_token` doesn't exist yet...):
+```python
+def test_encode_auth_token(self):
+    """Ensures the auth token is encoded"""
+    user = add_user('test', 'test@test.com', 'test')
+    auth_token = user.encode_auth_token(user.id)
+    self.assertIsInstance(auth_token, bytes)
+```
+So let's add our `encode_auth_token` method!
+```python
+@staticmethod
+def encode_auth_token(user_id):
+    """Encodes the JWT based on user id
+    :rtype: bytes|string
+    :param user_id: the user id
+    :return: encoded JWT
+    """
+    try:
+        payload = {
+            # Expiration Time Claim (exp)
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=1),
+            # Issued At Claim (iat)
+            'iat': datetime.datetime.utcnow(),
+            # Subject (sub)
+            'sub': user_id
+        }
+        return jwt.encode(payload, current_app.config.get('SECRET_KEY'), algorithm='HS256')
+    except Exception:
+        return 'Could not encode token.'
+```
+Notice the use of [Registed claim names](https://tools.ietf.org/html/rfc7519#section-4.1)
+
+Run the tests again and they should now pass.
+
+Great, let's now decrypt that. Again, first we will add a test for it.
+```python
+def test_decode_auth_token(self):
+    """Ensures the auth token can be decoded"""
+    user = add_user('test', 'test@test.com', 'test')
+    auth_token = user.encode_auth_token(user.id)
+    self.assertTrue(user.decode_auth_token(auth_token), user.id)
+```
+add the method to the `User` class:
+```python
+@staticmethod
+def decode_auth_token(auth_token):
+    """Decodes auth token
+    """
+    try:
+        payload = jwt.decode(auth_token, current_app.config.get('SECRET_KEY'), algorithms='HS256')
+        return payload['sub']
+    except jwt.ExpiredSignatureError:
+        return 'Expired token, please login again.'
+    except jwt.InvalidTokenError:
+        return 'Invalid token'
+    except Exception:
+        return 'Could not decode token.'
+```
+OK, our token expires after 1 second, it's great for tests but totally unusable in real conditions.
+Let's make it more flexible, so that we allow it to be valid for 1h on all environments but testing.
+Add a config parameter, and add it to the `test_config.py` to ensure it's equal to `1` in testing, and `3600` elsewhere.
+
+Here's how the code looks like now:
+
+* `docker-flask-react`: no change
+* `docker-flask-react-users`: Add JWT support. [repo](https://github.com/iyp-uk/docker-flask-react-users/tree/set-up-jwt) - [diff](https://github.com/iyp-uk/docker-flask-react-users/compare/set-up-users-passwords...set-up-jwt)
+* `docker-flask-react-client`: no change
+
+> Interesting notes about JWT:
+>* [why you must *not* use jwt for sessions](http://cryto.net/~joepie91/blog/2016/06/13/stop-using-jwt-for-sessions/)
+>* [why you must *not* use jwt for sessions (continued)](http://cryto.net/~joepie91/blog/2016/06/19/stop-using-jwt-for-sessions-part-2-why-your-solution-doesnt-work/)  
+
+### Set up authentication routes
+
+Time to concentrate on this table below now that we've got all prerequisites satisfied:
+
+| Endpoint | HTTP Method | Result | Authenticated? |
+|---|---|---|---|
+| `/auth/register` | `POST` | Register user | No |
+| `/auth/login` | `POST` | Login user | No |
+| `/auth/logout` | `GET` | Logout user | Yes |
+| `/auth/status` | `GET` | Check user status | Yes |
+
+We will create a new blueprint for 'auth' routes, and we then need to reorganise our project a little:
+
+1. Create a new `views` directory at the same level as `templates`
+    ```console
+    $ mkdir app/api/views
+    ```
+1. Move the current `views.py` into `app/api/views/users.py`
+1. Create empty `app/api/views/__init__.py`
+1. Update references:
+    * In `app/__init__.py`, `from app.api.views import users_blueprint` becomes `from app.api.views.users import users_blueprint`
+    * In the moved `users.py`, the `template_folder` is now one level above, relatively, so `users_blueprint = Blueprint('users', __name__,  template_folder='../templates')`
+1. Run your tests and ensure everything passes
+
+All good? Great! Let's now add our new `auth` blueprint:
+
+```console
+$ touch app/api/views/auth.py
+```
+Let's now edit this file with basic blueprint definition:
+```python
+from flask import Blueprint
+
+auth_blueprint = Blueprint('auth', __name__)
+```
+And register it in our `app/__init__.py`:
+```python
+from app.api.views.auth import auth_blueprint
+app.register_blueprint(auth_blueprint)
+```
+Add a new test file:
+```console
+$ touch tests/test_auth.py
+```
+Add now a basic silly test in `tests/test_auth.py`:
+```python
+from tests.base import BaseTestCase
+
+
+class TestAuth(BaseTestCase):
+    def test_user_registration(self):
+        self.assertTrue(True)
+```
+Run tests. They shall pass, including the one we just created.
+
+Now let's write the actual test for the user registration.
+We need to ensure:
+
+* Response is a success
+* A message indicating the user is registered
+* Token is retrieved 
+* `application/json` response content-type
+* HTTP Status code indicates creation:
+    * `2xx` type as it's a success
+    * but as we'll create one `201` is more appropriate
+    * [more on this](https://httpstatuses.com/))
+
+Here's how it looks like:
+```python
+class TestAuth(BaseTestCase):
+    def test_user_registration(self):
+        self.assertTrue(True)
+        with self.client:
+            response = self.client.post(
+                '/auth/register',
+                data=json.dumps(USER_BASIC),
+                content_type='application/json'
+            )
+            data = json.loads(response.data.decode())
+            self.assertTrue(data['status'] == 'success')
+            self.assertTrue(data['message'] == 'Successfully registered.')
+            self.assertTrue(data['auth_token'])
+            self.assertTrue(response.content_type == 'application/json')
+            self.assertEqual(response.status_code, 201)
+```
+So what's this new constant `USER_BASIC`?
+Because we're often reusing the same sets of "user definitions", we've wrapped them in `tests/constants.py` as follow:
+```python
+USER_BASIC = dict(username='test', email='test@test.com', password='test')
+USER_INVALID_STRUCTURE = dict(email='test@test.com')
+USER_NO_USERNAME = dict(username='', email='test@test.com', password='test')
+USER_NO_EMAIL = dict(username='test', email='', password='test')
+USER_NO_PASSWORD = dict(username='test', email='test@test.com', password='')
+```
+It makes the test code more readable in some ways, but obscures the real parameters being used.
+
+Let's now add more tests cases, what if the user has:
+
+* no username
+* no password
+* no email
+* a malformed request (missing json keys) 
+* is a duplicate? 
+
+We can write all these tests!
+
+This part is a little long, there are many tests attached, so we'll just point the most significant steps:
+
+* [Basis](https://github.com/iyp-uk/docker-flask-react-users/commit/b45eeb5771acef43eaba551083be6da455105834)
+* [Refactor and add registration](https://github.com/iyp-uk/docker-flask-react-users/commit/cad4f0f48a8a8b6d97d7c77e78406bd3f1553992)
+* [Add login](https://github.com/iyp-uk/docker-flask-react-users/commit/4d5180ac6b126ee39e094905e6136259eaac56a0)
+* [Add logout](https://github.com/iyp-uk/docker-flask-react-users/commit/b053a6ec2e1c39436fe1dfbe41b541e31b928db7)
+* [Add status](https://github.com/iyp-uk/docker-flask-react-users/commit/d66a776992154c1cc9b833e076ab16184d4f8ed0)
+
+Here's how the code looks like now:
+
+* `docker-flask-react`: no change
+* `docker-flask-react-users`: Add Authentication routes. [repo](https://github.com/iyp-uk/docker-flask-react-users/tree/set-up-auth-routes) - [diff](https://github.com/iyp-uk/docker-flask-react-users/compare/set-up-jwt...set-up-auth-routes)
+* `docker-flask-react-client`: no change
+
+Just a look on our test coverage:
+
+```console
+$ docker exec -it users python manage.py cov
+... test details here...
+an 43 tests in 11.380s
+
+OK
+Coverage Summary:
+Name                        Stmts   Miss Branch BrPart  Cover
+-------------------------------------------------------------
+app/__init__.py                22     10      0      0    55%
+app/api/__init__.py             0      0      0      0   100%
+app/api/models.py              72      6     12      3    89%
+app/api/views/__init__.py       0      0      0      0   100%
+app/api/views/auth.py          44      0      8      0   100%
+app/api/views/users.py         38      0      8      0   100%
+app/config.py                  20      0      0      0   100%
+-------------------------------------------------------------
+TOTAL                         196     16     28      3    92%
+```
+92%, it's not too bad. Notice how our `auth` and `users` views are fully covered. 
+Some improvements could be done on the `models` though. 
+
+Well, who's gonna consume all these routes? Let's update our `docker-flask-react-client` project!
+
+## React routing
+
+> Before we dive into this, you're invited to read a brief history of [routing on the client side](http://krasimirtsonev.com/blog/article/deep-dive-into-client-side-routing-navigo-pushstate-hash)
+> You're also invited to [have a look at some routing examples](https://reacttraining.com/react-router/web/example/basic) to get familiar with routing in React.
+> Or even [take the quickstart guide](https://reacttraining.com/react-router/web/guides/quick-start) if you're really new to it.
+
+So, let's now switch to our `docker-flask-react-client` project.
+
+We will create an `/about` route to start with.
+
+> You need to have the `docker-flask-react-users` service running to continue.
+Indeed, this is one client, but without a backend, there's only so much it can do, so make sure your project `docker-flask-react-users` is also running.
+If you're reading through, it should be the case as we just implemented the authentication routes on it.
+
+Install router package:
+
+```console
+$ cd app && npm install --save react-router-dom
+```
+
+This will update our `package.json` and `package-lock.json` inside the `app` directory and give us access to some key components:
+
+* [`Route`](https://reacttraining.com/react-router/web/api/Route)
+    * Renders some UI when location matches the route's path
+* [`Router`](https://reacttraining.com/react-router/web/api/Router)
+    * Keeps track of routes and keeps locations and UI in sync. We will use the [`BrowserRouter`](https://reacttraining.com/react-router/web/api/BrowserRouter) here as it makes use of [HTML5's history API](https://html5demos.com/history/) to manipulate browser's history without actually reloading the page.
+* [`Switch`](https://reacttraining.com/react-router/web/api/Switch)
+    * Renders the first of the routes within it to match the location
+* [`Link`](https://reacttraining.com/react-router/web/api/Link)
+    * Links to navigate using the routing system
+    * See its friend [`NavLink`](https://reacttraining.com/react-router/web/api/NavLink) for styled active links (used for menus)
+
+Example:
+```JSX
+<Router>
+  <div>
+    <Route exact path="/" component={Home}/>
+    <Route path="/news" component={NewsFeed}/>
+  </div>
+</Router>
+<Link to="/about">About</Link>
+```
+
+Build and start (or if you're in webstorm, deploy) your container:
+```console
+$ docker build -t docker-flask-react-client .
+$ docker run -p 3000:3000 -v $(pwd)/app:/usr/src/app --name react-client -e REACT_APP_USERS_SERVICE_URL=http://localhost:5000 docker-flask-react-client  
+```
+
+### Wrap the whole app in router
+
+First, let's add our `Router`, which will take care of our **entire** `App`.
+So in `app/src/index.js` change
+```JSX
+ReactDOM.render(<App />, document.getElementById('root'));
+```
+to:
+```JSX
+ReactDOM.render((
+  <Router>
+    <App/>
+  </Router>
+), document.getElementById('root'));
+registerServiceWorker();
+```
+Add also the appropriate import (and watch for the "renaming"):
+```JSX
+import { BrowserRouter as Router } from 'react-router-dom';
+```
+
+### Add the about component
+
+Now let's create our new `About.js` component:
+```console
+$ touch app/src/components/About.js
+```
+And fill in:
+```JSX
+import React from 'react';
+
+const About = () => {
+  return (
+    <div>
+      <h1>About</h1>
+      <hr/>
+      <p>Add something relevant here.</p>
+    </div>
+  )
+}
+
+export default About;
+```
+Now call it from the `app/src/App.js`, right after the list of users:
+```JSX
+...
+<UsersList users={this.state.users} />
+<About/>
+...
+```
+And add the `import` accordingly:
+```JSX
+import About from './components/About'
+```
+
+Refresh the page (should have been done automatically anyway as we're in dev mode) and verify that you can see:
+
+* The form to add users
+* A list of users, if you added any
+* The about component we just created
+
+> Why does everything appear on the same page?
+We're building an SPA (Single Page Application), and we haven't defined any routes, so every component is on the same page!
+Now you can see `Route` coming into play!
+
+### Add routes
+
+So we will add:
+
+* The about route so that the about information is visible just there
+* List all users on the homepage (`/`) and on this page only
+* Get rid of the rendering of the form in the `App.js` component as it's outdated (no password field). We will come back to it later.
+
+The innermost part of the `App.js`'s `render` method now looks like
+```jsx
+<Route path={`/about`} component={About}/>
+<Route exact path={`/`} render={() => <UsersList users={this.state.users} />}/>
+<Link to={`/about`}>About</Link>
+```
+And `UsersList.js` gets a "title" now (which was in `App.js` before):
+```jsx
+const UsersList = (props) => {
+  return (
+    <div>
+      <h1>All Users</h1>
+      <hr/>
+      {
+        props.users.map((user) => {
+          return <h4 key={user.id} className="well"><strong>{user.username }</strong> - <em>{user.created_at}</em></h4>
+        })
+      }
+    </div>
+  )
+}
+```
+Refresh, click on the "about" link and the back button of your browser and verify no network activity is visible in your browser's console.
+
+### React bootstrap
+
+Let's add some bootstrap fanciness to the mix, with React support.
+From the `app` directory:
+```console
+$ npm install -S react-bootstrap react-router-bootstrap
++ react-router-bootstrap@0.24.4
++ react-bootstrap@0.31.3
+```
+This will allow us to have a nice Navbar, bootstrap style.
+
+So let's add it to our `components` directory:
+```console
+$ touch app/src/components/NavBar.js
+```
+```jsx
+import React from 'react';
+import { Navbar, Nav, NavItem } from 'react-bootstrap';
+import { LinkContainer } from 'react-router-bootstrap';
+
+const NavBar = (props) => (
+  <Navbar inverse collapseOnSelect>
+    <Navbar.Header>
+      <Navbar.Brand>
+        <span>{props.title}</span>
+      </Navbar.Brand>
+      <Navbar.Toggle />
+    </Navbar.Header>
+    <Navbar.Collapse>
+      <Nav>
+        <LinkContainer exact to="/">
+          <NavItem eventKey={1}>Home</NavItem>
+        </LinkContainer>
+        <LinkContainer to="/about">
+          <NavItem eventKey={2}>About</NavItem>
+        </LinkContainer>
+        <LinkContainer to="/status">
+          <NavItem eventKey={3}>User Status</NavItem>
+        </LinkContainer>
+      </Nav>
+      <Nav pullRight>
+        <LinkContainer to="/register">
+          <NavItem eventKey={1}>Register</NavItem>
+        </LinkContainer>
+        <LinkContainer to="/login">
+          <NavItem eventKey={2}>Log In</NavItem>
+        </LinkContainer>
+        <LinkContainer to="/logout">
+          <NavItem eventKey={3}>Log Out</NavItem>
+        </LinkContainer>
+      </Nav>
+    </Navbar.Collapse>
+  </Navbar>
+)
+
+export default NavBar
+```
+And include it in our `App.js` and remove the `Link` to `About` we set previously.
+```jsx
+<div className="App">
+    <NavBar title={this.state.title}/>
+    ...
+```
+Notice all routes we defined in `docker-flask-react-users` are there, we will just display the relevant ones in a moment.
+
+But before we get there, let's add a login / register form component.
+```console
+touch app/src/components/LoginRegister.js
+```
+```jsx
+import React from 'react';
+
+const LoginRegister = (props) => {
+  return (
+    <div>
+      <h1>{props.formType}</h1>
+      <hr/><br/>
+      <form onSubmit={(event) => props.handleUserFormSubmit(event)}>
+        {props.formType === 'Register' &&
+        <div className="form-group">
+          <input
+            name="username"
+            className="form-control input-lg"
+            type="text"
+            placeholder="Enter a username"
+            required
+            value={props.formData.username}
+            onChange={props.handleFormChange}
+          />
+        </div>
+        }
+        <div className="form-group">
+          <input
+            name="email"
+            className="form-control input-lg"
+            type="email"
+            placeholder="Enter an email address"
+            required
+            value={props.formData.email}
+            onChange={props.handleFormChange}
+          />
+        </div>
+        <div className="form-group">
+          <input
+            name="password"
+            className="form-control input-lg"
+            type="password"
+            placeholder="Enter a password"
+            required
+            value={props.formData.password}
+            onChange={props.handleFormChange}
+          />
+        </div>
+        <input
+          type="submit"
+          className="btn btn-primary btn-lg btn-block"
+          value="Submit"
+        />
+      </form>
+    </div>
+  )
+}
+
+export default LoginRegister
+```
+Add it to the `App.js`, along with a `Switch`:
+```jsx
+<Switch>
+  <Route exact path={`/`} render={() => <UsersList users={this.state.users} />}/>
+  <Route exact path={`/login`} render={() => (
+    <LoginRegister
+      formType={'Login'}
+      formData={this.state.formData}
+    />
+  )} />
+  <Route exact path={`/register`} render={() => (
+    <LoginRegister
+      formType={'Register'}
+      formData={this.state.formData}
+    />
+  )} />
+  <Route path={`/about`} component={About}/>
+</Switch>
+```
+Add properties to the state:
+```jsx
+this.state = {
+  users: [],
+  username: '',
+  email: '',
+  title: 'iyp-uk/docker-flask-react-client',
+  formData: {
+    username: '',
+    email: '',
+    password: ''
+  }
+}
+```
+Import component
+```jsx
+import LoginRegister from './components/LoginRegister'
+```
+And you're good to go! Test it out, so that you see the appropriate fields in each case.
+
+## React tests
+
+### Jest
+
+[Running tests in React](https://github.com/facebookincubator/create-react-app/blob/master/packages/react-scripts/template/README.md#running-tests) 
+uses [Jest](https://facebook.github.io/jest/) as its test runner. 
+
+It provides useful utilities such as:
+
+* [Expect](https://facebook.github.io/jest/docs/en/expect.html#content)
+* [Mock functions](https://facebook.github.io/jest/docs/en/mock-function-api.html#content) also known as "spies"
+
+### Enzyme
+
+[Enzyme](https://github.com/airbnb/enzyme) is a library provided by [Airbnb](https://github.com/airbnb) 
+and provides the ability to test components in isolation.
+
+It provides useful utilities such as:
+
+* [Shallow rendering](https://github.com/airbnb/enzyme/blob/master/docs/api/shallow.md): `shallow` for when you want to test a component in isolation of potential child components
+* [Full DOM rendering](https://github.com/airbnb/enzyme/blob/master/docs/api/mount.md): `mount` for when you need the full lifecycle (i.e `componentDidMount`)
+* [Static Rendering](https://github.com/airbnb/enzyme/blob/master/docs/api/render.md): `render` for when you want to analyse the resulting HTML of your component
+
+> Official documentation for [enzyme](http://airbnb.io/enzyme/)
 
 ## End to end testing
-
-
 
 [Comparison of Selenium web driver and TestCafe](http://onpathtesting.com/automated-testing-tool-testcafe-or-selenium-webdriver/)
